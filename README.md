@@ -78,7 +78,7 @@ result = scorer.evaluate(reference_findings="...", predicted_findings="...")
 |---|---|
 | `CRIMSON/` | Core scoring module: prompt construction (`prompt_parts.py`) and score generation (`generate_score.py`) |
 | `RadPref/` | RadPref preference benchmark with ground truth + candidate reports, radiologist annotations, and evaluation scripts |
-| `RadJudge/` | Curated ranking test suite with ~30 clinically challenging test cases |
+| `RadJudge/` | Curated ranking test suite with 30 clinically challenging test cases |
 | `evaluate_reports.py` | End-to-end evaluation combining RadEval metrics and CRIMSON |
 
 ## RadPref
@@ -107,7 +107,7 @@ python RadPref/evaluate_radpref.py --input RadPref/preference_data.json --output
 
 ## RadJudge
 
-RadJudge is a curated test suite of ~30 ranking cases organized by error category (false findings, missing findings, attribute errors, clinical significance). Each case provides a ground truth and two or more candidates with a known expected ranking, verifying that metrics behave according to clinical intuition.
+RadJudge is a curated test suite of 30 ranking cases organized by error category (false findings, missing findings, attribute errors, clinical significance). Each case provides a ground truth and two or more candidates with a known expected ranking, verifying that metrics behave according to clinical intuition.
 
 ### Running RadJudge tests
 
