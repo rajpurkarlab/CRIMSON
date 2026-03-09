@@ -1,0 +1,26 @@
+*.cursorignore
+*.pyc
+__pycache__/
+
+RadEval/
+
+*.pycache/
+*.pyc
+
+*.DS_Store
+
+*.egg-info/
+data/mimic
+
+data/rexval_results/old_results/
+data/rexgradient/deid_png.part00
+data/rexgradient/imgs
+data/rexgradient/train_metadata.csv
+data/rexgradient/train_metadata_view_position.json
+
+# Secrets / credentials
+api_secrets.py
+
+# Build artifacts
+finetuning/logs/
+figures/
