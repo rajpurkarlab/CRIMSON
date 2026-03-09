@@ -24,7 +24,7 @@ To also evaluate with RadEval metrics (optional, used by RadPref and RadJudge ev
 
 ## Usage
 
-By default, CRIMSON uses the fine-tuned [CRIMSON-MedGemma model](https://huggingface.co/CRIMSONScore/medgemma-4b-it-crimson) via HuggingFace.
+By default, CRIMSON uses the fine-tuned [MedGemmaCRIMSON model](https://huggingface.co/CRIMSONScore/medgemma-4b-it-crimson) via HuggingFace.
 
 To use OpenAI GPT models instead, set your API key:
 
