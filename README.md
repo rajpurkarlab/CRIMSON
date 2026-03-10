@@ -7,17 +7,15 @@ CRIMSON is a clinically grounded evaluation framework for chest X-ray report gen
 ## Installation
 
 ```bash
-git clone https://github.com/rajpurkarlab/CRIMSON.git
-cd CRIMSON
-conda create -n crimson python=3.11
-conda activate crimson
-pip install -e .
+pip install crimson-score
 ```
 
-Or install dependencies directly:
+Or install from source:
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/rajpurkarlab/CRIMSON.git
+cd CRIMSON
+pip install -e .
 ```
 
 To also evaluate with RadEval metrics (optional, used by RadPref and RadJudge evaluation scripts), follow the installation instructions in the [RadEval repository](https://github.com/jbdel/RadEval).
@@ -35,9 +33,9 @@ export OPENAI_API_KEY="your-openai-api-key"
 ### Scoring a report pair
 
 ```python
-from CRIMSON.generate_score import CRIMSONScore
+from CRIMSON import CRIMSONScore
 
-# Default: uses the HuggingFace MedGemmaCRIMSON model 
+# Default: uses the HuggingFace MedGemmaCRIMSON model
 scorer = CRIMSONScore()
 result = scorer.evaluate(
     reference_findings="Cardiomegaly. Small bilateral pleural effusions.",
