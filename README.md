@@ -123,7 +123,7 @@ python RadJudge/test_suite.py --radeval
 ## Reference
 
 ```bibtex
-@article{baharoon2025crimson,
+@article{baharoon2026crimson,
   title={CRIMSON: A Clinically-Grounded LLM-Based Metric for Generative Radiology Report Evaluation},
   author={Baharoon, Mohammed and Heintz, Thibault and Raissi, Siavash and Alabbad, Mahmoud and Alhammad, Mona and AlOmaish, Hassan and Kim, Sung Eun and Banerjee, Oishi and Rajpurkar, Pranav},
   journal={arXiv preprint arXiv:2603.06183},
