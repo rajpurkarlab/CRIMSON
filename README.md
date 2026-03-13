@@ -185,3 +185,15 @@ python RadJudge/test_suite.py --tests 1a 2b 3c
   year={2026}
 }
 ```
+
+If you use RadEval metrics in your evaluation, please also cite:
+
+```bibtex
+@inproceedings{xu2025radeval,
+    title={RadEval: A framework for radiology text evaluation},
+    author={Xu, Justin and Zhang, Xi and Abderezaei, Javid and Bauml, Julie and Boodoo, Roger and Haghighi, Fatemeh and Ganjizadeh, Ali and Brattain, Eric and Van Veen, Dave and Meng, Zaiqiao and others},
+    booktitle={Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing: System Demonstrations},
+    pages={546--557},
+    year={2025}
+}
+```
