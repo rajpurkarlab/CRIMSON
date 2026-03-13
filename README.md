@@ -6,6 +6,22 @@ CRIMSON is a clinically grounded evaluation framework for chest X-ray report gen
 
 ## Installation
 
+Step 1: Create and activate a dedicated environment (Conda or Python `venv`):
+
+```bash
+# Option 1: Conda
+conda create -n crimson python=3.12 -y
+conda activate crimson
+
+# Option 2: Python venv
+python -m venv crimson
+source crimson/bin/activate
+
+python -m pip install --upgrade pip
+```
+
+Step 2: Install CRIMSON:
+
 ```bash
 pip install crimson-score
 ```
@@ -17,8 +33,6 @@ git clone https://github.com/rajpurkarlab/CRIMSON.git
 cd CRIMSON
 pip install -e .
 ```
-
-To also evaluate with RadEval metrics (optional, used by RadPref and RadJudge evaluation scripts), follow the installation instructions in the [RadEval repository](https://github.com/jbdel/RadEval).
 
 ## Usage
 
@@ -43,9 +57,9 @@ result = scorer.evaluate(
 )
 
 print(f"CRIMSON Score: {result['crimson_score']:.2f}")
-print(f"False findings: {result['crimson_false_findings']}")
-print(f"Missing findings: {result['crimson_missing_findings']}")
-print(f"Attribute errors: {result['crimson_attribute_errors']}")
+print(f"False findings: {result['error_counts']['false_findings']}")
+print(f"Missing findings: {result['error_counts']['missing_findings']}")
+print(f"Attribute errors: {result['error_counts']['attribute_errors']}")
 ```
 
 ### Scoring with patient context
@@ -72,12 +86,65 @@ result = scorer.evaluate(reference_findings="...", predicted_findings="...")
 
 ## Components
 
-| Directory | Description |
+| Directory / File | Description |
 |---|---|
 | `CRIMSON/` | Core scoring module: prompt construction (`prompt_parts.py`) and score generation (`generate_score.py`) |
 | `RadPref/` | RadPref preference benchmark with ground truth + candidate reports, radiologist annotations, and evaluation scripts |
 | `RadJudge/` | Curated ranking test suite with 30 clinically challenging test cases |
-| `evaluate_reports.py` | End-to-end evaluation combining RadEval metrics and CRIMSON |
+| `evaluate_reports.py` | Batch evaluation script: scores a CSV of report pairs with CRIMSON and saves results as JSON |
+
+## Evaluating a CSV file with `evaluate_reports.py`
+
+`evaluate_reports.py` runs CRIMSON over a CSV of ground truth / predicted report pairs and saves results to a JSON file.
+
+A sample dataset is provided in `sample_data.csv` with 10 chest X-ray cases:
+
+```bash
+# Basic usage
+python evaluate_reports.py \
+    --input sample_data.csv \
+    --gt-column Findings \
+    --pred-column Predicted
+
+# With detailed error counts in output
+python evaluate_reports.py \
+    --input sample_data.csv \
+    --gt-column Findings \
+    --pred-column Predicted \
+    --details
+```
+
+### Batched inference 
+
+When using the default HuggingFace model, you can process multiple samples per GPU forward pass with `--batch-size`:
+
+```bash
+python evaluate_reports.py \
+    --input sample_data.csv \
+    --gt-column Findings \
+    --pred-column Predicted \
+    --batch-size 4
+```
+
+### Output format
+
+Results are saved as JSON with an `average` summary and a `results` list:
+
+```json
+{
+  "average": { "crimson_score": 0.72 },
+  "results": [
+    {
+      "id": 1,
+      "ground_truth": "...",
+      "predicted": "...",
+      "crimson_score": 0.85,
+      "raw_evaluation": { ... }
+    },
+    ...
+  ]
+}
+```
 
 ## RadPref
 
@@ -90,17 +157,8 @@ The dataset is located in `RadPref/preference_data.json` with per-rater annotati
 
 ### Evaluating on RadPref
 
-The evaluation script scores all candidate pairs using CRIMSON (via parallel API calls) and optionally [RadEval](https://github.com/jbdel/RadEval) metrics:
-
 ```bash
-# Score with both CRIMSON and RadEval (default)
 python RadPref/evaluate_radpref.py --input RadPref/preference_data.json --output scores.json
-
-# Score with CRIMSON only
-python RadPref/evaluate_radpref.py --input RadPref/preference_data.json --output scores.json --skip-radeval
-
-# Score with RadEval only
-python RadPref/evaluate_radpref.py --input RadPref/preference_data.json --output scores.json --skip-crimson
 ```
 
 ## RadJudge
@@ -110,14 +168,11 @@ RadJudge is a curated test suite of 30 ranking cases organized by error category
 ### Running RadJudge tests
 
 ```bash
-# Run all tests with CRIMSON
+# Run all tests
 python RadJudge/test_suite.py
 
 # Run specific test cases
 python RadJudge/test_suite.py --tests 1a 2b 3c
-
-# Also compare against RadEval metrics
-python RadJudge/test_suite.py --radeval
 ```
 
 ## Reference
@@ -128,17 +183,5 @@ python RadJudge/test_suite.py --radeval
   author={Baharoon, Mohammed and Heintz, Thibault and Raissi, Siavash and Alabbad, Mahmoud and Alhammad, Mona and AlOmaish, Hassan and Kim, Sung Eun and Banerjee, Oishi and Rajpurkar, Pranav},
   journal={arXiv preprint arXiv:2603.06183},
   year={2026}
-}
-```
-
-If you use RadEval metrics in your evaluation, please also cite:
-
-```bibtex
-@inproceedings{xu2025radeval,
-    title={RadEval: A framework for radiology text evaluation},
-    author={Xu, Justin and Zhang, Xi and Abderezaei, Javid and Bauml, Julie and Boodoo, Roger and Haghighi, Fatemeh and Ganjizadeh, Ali and Brattain, Eric and Van Veen, Dave and Meng, Zaiqiao and others},
-    booktitle={Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing: System Demonstrations},
-    pages={546--557},
-    year={2025}
 }
 ```

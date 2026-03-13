@@ -3,6 +3,7 @@ import csv
 import os
 import sys
 import re
+from typing import Optional
 from openai import OpenAI
 from CRIMSON.prompt_parts import build_prompt as _build_evaluation_prompt_fn
 
@@ -16,18 +17,17 @@ class CRIMSONScore:
     """
     
     DEFAULT_HF_MODEL = "CRIMSONScore/medgemma-4b-it-crimson"
+    DEFAULT_MAX_NEW_TOKENS = 4096
 
     def __init__(
-        self, 
+        self,
         api="hf",
         model_name=None,
         device=None,
-        torch_dtype=None,
-        batch_size=1,
     ):
         """
         Initialize CRIMSON scorer.
-        
+
         Args:
             api: Model type to use ("hf", "huggingface", "openai").
                  Defaults to "hf".
@@ -35,14 +35,9 @@ class CRIMSONScore:
                        Defaults to "CRIMSONScore/medgemma-4b-it-crimson" for HF.
                        For OpenAI, defaults to "gpt-5.2".
             device: Device to use for HuggingFace models. Defaults to "cuda".
-            torch_dtype: PyTorch dtype for model weights (e.g., torch.float16, torch.bfloat16)
-                        If None, uses torch.float16
-            batch_size: Number of samples processed per forward pass for HuggingFace models
-                        (e.g. MedGemma). Values > 1 enable batched inference. Defaults to 1.
         """
         self.api = api
-        self.batch_size = batch_size
-        
+
         if api == "openai":
             self.model_name = model_name or "gpt-5.2"
             self.client = OpenAI(
@@ -51,15 +46,18 @@ class CRIMSONScore:
         elif api in ["huggingface", "hf"]:
             self.model_name = model_name or self.DEFAULT_HF_MODEL
             self.device = device or "cuda"
-            self.torch_dtype = torch_dtype or torch.float16
-            
+            self.torch_dtype = torch.bfloat16
+
             print(f"Loading HuggingFace model: {self.model_name}")
             self.pipe = pipeline(
                 "text-generation",
                 model=self.model_name,
-                torch_dtype=self.torch_dtype,
+                dtype=self.torch_dtype,
                 device_map="auto",
             )
+            # If the model has a generation_config.json, use it instead of
+            # injecting our own generation kwargs at inference time.
+            self._has_generation_config = not self.pipe.model.generation_config._from_model_config
             print(f"Model loaded.")
         else:
             raise ValueError(f"Unsupported model: {api}. Use 'openai', 'huggingface', or 'hf'.")
@@ -85,7 +83,7 @@ class CRIMSONScore:
                 "model": self.model_name,
                 "messages": messages,
                 "seed": 42,
-                "temperature": 0,
+                "temperature": 0.0,
                 "response_format": {"type": "json_object"},
             }
             
@@ -95,15 +93,73 @@ class CRIMSONScore:
         elif self.api in ["huggingface", "hf"]:
             messages = [
                 {"role": "system", "content": "You are an expert radiology evaluator that assesses the accuracy of radiology reports."},
-                {"role": "user", "content": prompt + "\nPlease respond with valid JSON only."},
+                {"role": "user", "content": prompt},
             ]
-            outputs = self.pipe(
-                messages,
-                max_new_tokens=4096,
-                temperature=0,
-                batch_size=self.batch_size,
-            )
+
+            if self._has_generation_config:
+                outputs = self.pipe(messages, generation_config=self.pipe.model.generation_config)
+            else:
+                outputs = self.pipe(
+                    messages,
+                    max_new_tokens=self.DEFAULT_MAX_NEW_TOKENS,
+                    max_length=None,
+                    do_sample=False,
+                )
             return outputs[0]['generated_text'][-1]['content']
+
+    def _chat_completion_batch(self, prompts, batch_size=1):
+        """
+        Make completion requests for multiple prompts.
+
+        For HuggingFace models, prompts are processed in local GPU batches of
+        batch_size. OpenAI is not supported.
+
+        Args:
+            prompts: List of prompt strings
+            batch_size: Number of prompts to process per forward pass. Defaults to 1.
+
+        Returns:
+            List of response strings in the same order as prompts
+        """
+        if not prompts:
+            return []
+
+        if self.api not in ["huggingface", "hf"]:
+            raise ValueError(f"Batch not supported yet for API: {self.api}")
+
+        responses = []
+        for start in range(0, len(prompts), batch_size):
+            chunk = prompts[start:start + batch_size]
+            messages_batch = [
+                [
+                    {"role": "system", "content": "You are an expert radiology evaluator that assesses the accuracy of radiology reports."},
+                    {"role": "user", "content": prompt},
+                ]
+                for prompt in chunk
+            ]
+            if self._has_generation_config:
+                outputs = self.pipe(messages_batch, generation_config=self.pipe.model.generation_config, batch_size=batch_size)
+            else:
+                outputs = self.pipe(
+                    messages_batch,
+                    max_new_tokens=self.DEFAULT_MAX_NEW_TOKENS,
+                    max_length=None,
+                    do_sample=False,
+                    batch_size=batch_size,
+                )
+
+            # Handle list of dicts or list of lists of dicts
+            if isinstance(outputs, list) and len(outputs) > 0 and isinstance(outputs[0], list):
+                # When pipeline returns a list of lists of dicts for multiple inputs
+                responses.extend(out[0]['generated_text'][-1]['content'] for out in outputs)
+            else:
+                # Fallback for single batch size or when pipeline flattens the output
+                if batch_size == 1:
+                    responses.append(outputs[0]['generated_text'][-1]['content'])
+                else:
+                    responses.extend(output['generated_text'][-1]['content'] for output in outputs)
+
+        return responses
     
     def _build_evaluation_prompt(
         self, 
@@ -126,6 +182,13 @@ class CRIMSONScore:
         Returns:
             Formatted prompt string
         """
+
+        # For the MedGemmaCRIMSON, exclude guidelines and patient context —
+        # the model was trained without them and they don't fit the token budget.
+        if self.api in ["huggingface", "hf"] and self.model_name == self.DEFAULT_HF_MODEL:
+            include_guidelines = False
+            patient_context = None
+        
         return _build_evaluation_prompt_fn(
             reference_findings,
             predicted_findings,
@@ -177,6 +240,67 @@ class CRIMSONScore:
         crimson_result = self._calculate_crimson(evaluation)
         
         return crimson_result
+
+    def evaluate_batch(
+        self,
+        reference_findings_list,
+        predicted_findings_list,
+        patient_contexts: Optional[list] = None,
+        include_guidelines=True,
+        batch_size=1,
+    ):
+        """
+        Evaluate multiple report pairs in one call.
+
+        HuggingFace path uses local batched inference with the given batch_size.
+        OpenAI is not supported for batch evaluation.
+
+        Args:
+            reference_findings_list: List of ground truth findings
+            predicted_findings_list: List of model-generated findings
+            patient_contexts: Optional list of patient contexts, aligned by index
+            include_guidelines: If False, disables guidelines in the prompt
+            batch_size: Number of prompts per forward pass (HF only). Defaults to 1.
+
+        Returns:
+            List of CRIMSON result dictionaries (same format as evaluate)
+        """
+        if len(reference_findings_list) != len(predicted_findings_list):
+            raise ValueError("reference_findings_list and predicted_findings_list must have the same length")
+
+        if patient_contexts is None:
+            patient_contexts = [None] * len(reference_findings_list)
+        elif len(patient_contexts) != len(reference_findings_list):
+            raise ValueError("patient_contexts must be None or have the same length as input lists")
+
+        prompts = [
+            self._build_evaluation_prompt(
+                reference_findings,
+                predicted_findings,
+                patient_context,
+                include_guidelines=include_guidelines,
+            )
+            for reference_findings, predicted_findings, patient_context in zip(
+                reference_findings_list,
+                predicted_findings_list,
+                patient_contexts,
+            )
+        ]
+
+        responses = self._chat_completion_batch(prompts, batch_size=batch_size)
+
+        results = []
+        for idx, response in enumerate(responses):
+            try:
+                evaluation = json.loads(response)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Failed to parse model response as JSON for batch item {idx}: {e}\nResponse: {response}"
+                )
+
+            results.append(self._calculate_crimson(evaluation))
+
+        return results
     
     def _calculate_crimson(
         self,
