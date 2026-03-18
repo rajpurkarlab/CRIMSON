@@ -187,7 +187,6 @@ class CRIMSONScore:
         # the model was trained without them and they don't fit the token budget.
         if self.api in ["huggingface", "hf"] and self.model_name == self.DEFAULT_HF_MODEL:
             include_guidelines = False
-            patient_context = None
         
         return _build_evaluation_prompt_fn(
             reference_findings,
