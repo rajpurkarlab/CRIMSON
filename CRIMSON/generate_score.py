@@ -183,8 +183,7 @@ class CRIMSONScore:
             Formatted prompt string
         """
 
-        # For the MedGemmaCRIMSON, exclude guidelines and patient context —
-        # the model was trained without them and they don't fit the token budget.
+        # For the MedGemmaCRIMSON, exclude guidelines. the model was trained without them.
         if self.api in ["huggingface", "hf"] and self.model_name == self.DEFAULT_HF_MODEL:
             include_guidelines = False
         
