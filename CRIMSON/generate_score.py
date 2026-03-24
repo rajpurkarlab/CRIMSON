@@ -4,6 +4,9 @@ import os
 import sys
 import re
 from typing import Optional
+
+from CRIMSON.utils import clean_report_text, parse_json_response  # noqa: F401
+
 from openai import OpenAI
 from CRIMSON.prompt_parts import build_prompt as _build_evaluation_prompt_fn
 
@@ -150,14 +153,13 @@ class CRIMSONScore:
 
             # Handle list of dicts or list of lists of dicts
             if isinstance(outputs, list) and len(outputs) > 0 and isinstance(outputs[0], list):
-                # When pipeline returns a list of lists of dicts for multiple inputs
-                responses.extend(out[0]['generated_text'][-1]['content'] for out in outputs)
+                batch_responses = [out[0]['generated_text'][-1]['content'] for out in outputs]
             else:
-                # Fallback for single batch size or when pipeline flattens the output
                 if batch_size == 1:
-                    responses.append(outputs[0]['generated_text'][-1]['content'])
+                    batch_responses = [outputs[0]['generated_text'][-1]['content']]
                 else:
-                    responses.extend(output['generated_text'][-1]['content'] for output in outputs)
+                    batch_responses = [output['generated_text'][-1]['content'] for output in outputs]
+            responses.extend(batch_responses)
 
         return responses
     
@@ -195,7 +197,12 @@ class CRIMSONScore:
             include_attribute_guidelines=include_guidelines,
             include_context_guidelines=include_guidelines,
         )
-    
+
+    @staticmethod
+    def _parse_json_response(response, batch_idx=None):
+        """Parse model response as JSON, fixing invalid backslash escapes."""
+        return parse_json_response(response, batch_idx=batch_idx)
+
     def evaluate(
         self,
         reference_findings,
@@ -228,11 +235,7 @@ class CRIMSONScore:
         )
         
         response = self._chat_completion(prompt)
-        
-        try:
-            evaluation = json.loads(response)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse model response as JSON: {e}\nResponse: {response}")
+        evaluation = self._parse_json_response(response)
         
         # Calculate CRIMSON score
         crimson_result = self._calculate_crimson(evaluation)
@@ -289,13 +292,7 @@ class CRIMSONScore:
 
         results = []
         for idx, response in enumerate(responses):
-            try:
-                evaluation = json.loads(response)
-            except json.JSONDecodeError as e:
-                raise ValueError(
-                    f"Failed to parse model response as JSON for batch item {idx}: {e}\nResponse: {response}"
-                )
-
+            evaluation = self._parse_json_response(response, batch_idx=idx)
             results.append(self._calculate_crimson(evaluation))
 
         return results
@@ -334,14 +331,14 @@ class CRIMSONScore:
         
         def calculate_weighted_count(error_list, weights=significance_weights, key="clinical_significance"):
             """Calculate weighted count based on significance/severity."""
-            return sum(weights[error[key]] for error in error_list)
+            return sum(weights.get(error.get(key, ""), 0.25) for error in error_list)
         
         ref_weight_by_id = {
-            ref["id"]: significance_weights[ref["clinical_significance"]]
+            ref["id"]: significance_weights.get(ref.get("clinical_significance", ""), 0.25)
             for ref in reference_findings_list
         }
         pred_weight_by_id = {
-            pred["id"]: significance_weights[pred["clinical_significance"]]
+            pred["id"]: significance_weights.get(pred.get("clinical_significance", ""), 0.25)
             for pred in predicted_findings_list
         }
         
@@ -388,7 +385,7 @@ class CRIMSONScore:
                 correct += base_weight
             else:
                 sum_error_weights = sum(
-                    attribute_severity_weights[err["severity"]] for err in finding_attr_errors
+                    attribute_severity_weights.get(err.get("severity", ""), 0.25) for err in finding_attr_errors
                 )
                 credit_factor = base_weight / (base_weight + sum_error_weights) if (base_weight + sum_error_weights) > 0 else 0.0
                 correct += base_weight * credit_factor
