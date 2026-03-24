@@ -1,6 +1,7 @@
 """Text cleaning and parsing utilities for CRIMSON scoring."""
 
 import json
+import os
 import re
 
 # ---------------------------------------------------------------------------
@@ -254,3 +255,54 @@ def parse_json_response(response, batch_idx=None):
         f"Failed to parse model response as JSON{ctx}\n"
         f"Response ({len(response)} chars):\n{response}"
     )
+
+# ---------------------------------------------------------------------------
+# vLLM model resolution
+# ---------------------------------------------------------------------------
+
+def resolve_model_for_vllm(model_name: str) -> str:
+    """Resolve a HF model name to a local path suitable for vLLM.
+
+    Works around a known issue where a stale
+    ``model.safetensors.index.json`` on HuggingFace Hub references
+    sharded weight files that don't exist alongside a consolidated
+    ``model.safetensors``.  vLLM's weight loader trusts the index and
+    ends up finding zero matching files.
+
+    If the model is already a local path, it is returned unchanged.
+    """
+    if os.path.isdir(model_name):
+        return model_name
+
+    from huggingface_hub import snapshot_download
+    snapshot_dir = snapshot_download(model_name)
+
+    index_path = os.path.join(snapshot_dir, "model.safetensors.index.json")
+    consolidated_path = os.path.join(snapshot_dir, "model.safetensors")
+    if os.path.exists(index_path) and os.path.exists(consolidated_path):
+        # Check if the index references files that don't actually exist
+        with open(index_path) as f:
+            index = json.load(f)
+        referenced = set(index.get("weight_map", {}).values())
+        missing = [
+            fn for fn in referenced
+            if not os.path.exists(os.path.join(snapshot_dir, fn))
+        ]
+        if missing:
+            # Build a clean local copy without the stale index
+            import tempfile
+            clean_dir = os.path.join(
+                tempfile.gettempdir(),
+                f"vllm-{model_name.replace('/', '--')}",
+            )
+            os.makedirs(clean_dir, exist_ok=True)
+            for entry in os.listdir(snapshot_dir):
+                if entry == "model.safetensors.index.json":
+                    continue
+                dst = os.path.join(clean_dir, entry)
+                if not os.path.exists(dst):
+                    src = os.path.realpath(os.path.join(snapshot_dir, entry))
+                    os.symlink(src, dst)
+            return clean_dir
+
+    return snapshot_dir

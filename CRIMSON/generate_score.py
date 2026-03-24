@@ -5,13 +5,8 @@ import sys
 import re
 from typing import Optional
 
-from CRIMSON.utils import clean_report_text, parse_json_response  # noqa: F401
-
-from openai import OpenAI
+from CRIMSON.utils import clean_report_text, parse_json_response, resolve_model_for_vllm  # noqa: F401
 from CRIMSON.prompt_parts import build_prompt as _build_evaluation_prompt_fn
-
-from transformers import pipeline
-import torch
 
 class CRIMSONScore:
     """
@@ -20,7 +15,7 @@ class CRIMSONScore:
     """
     
     DEFAULT_HF_MODEL = "CRIMSONScore/medgemma-4b-it-crimson"
-    DEFAULT_MAX_NEW_TOKENS = 4096
+    DEFAULT_MAX_NEW_TOKENS = 8192
 
     def __init__(
         self,
@@ -42,11 +37,14 @@ class CRIMSONScore:
         self.api = api
 
         if api == "openai":
+            from openai import OpenAI
             self.model_name = model_name or "gpt-5.2"
             self.client = OpenAI(
                 api_key=os.environ.get("OPENAI_API_KEY"),
             )
         elif api in ["huggingface", "hf"]:
+            import torch
+            from transformers import pipeline
             self.model_name = model_name or self.DEFAULT_HF_MODEL
             self.device = device or "cuda"
             self.torch_dtype = torch.bfloat16
@@ -58,12 +56,30 @@ class CRIMSONScore:
                 dtype=self.torch_dtype,
                 device_map="auto",
             )
+            # Left-pad for efficient batch generation with decoder-only models
+            if self.pipe.tokenizer.padding_side != "left":
+                self.pipe.tokenizer.padding_side = "left"
             # If the model has a generation_config.json, use it instead of
             # injecting our own generation kwargs at inference time.
             self._has_generation_config = not self.pipe.model.generation_config._from_model_config
             print(f"Model loaded.")
+        elif api == "vllm":
+            from vllm import LLM, SamplingParams
+            self.model_name = model_name or self.DEFAULT_HF_MODEL
+            model_path = resolve_model_for_vllm(self.model_name)
+            print(f"Loading vLLM model: {self.model_name}")
+            self.llm = LLM(
+                model=model_path,
+                dtype="bfloat16",
+                max_model_len=8192,
+            )
+            self.sampling_params = SamplingParams(
+                temperature=0.0,
+                max_tokens=self.DEFAULT_MAX_NEW_TOKENS,
+            )
+            print(f"vLLM model loaded.")
         else:
-            raise ValueError(f"Unsupported model: {api}. Use 'openai', 'huggingface', or 'hf'.")
+            raise ValueError(f"Unsupported model: {api}. Use 'openai', 'huggingface', 'hf', or 'vllm'.")
     
     
     def _chat_completion(self, prompt):
@@ -110,6 +126,14 @@ class CRIMSONScore:
                 )
             return outputs[0]['generated_text'][-1]['content']
 
+        elif self.api == "vllm":
+            messages = [
+                {"role": "system", "content": "You are an expert radiology evaluator that assesses the accuracy of radiology reports."},
+                {"role": "user", "content": prompt},
+            ]
+            outputs = self.llm.chat([messages], sampling_params=self.sampling_params, use_tqdm=False)
+            return outputs[0].outputs[0].text
+
     def _chat_completion_batch(self, prompts, batch_size=1):
         """
         Make completion requests for multiple prompts.
@@ -126,6 +150,18 @@ class CRIMSONScore:
         """
         if not prompts:
             return []
+
+        if self.api == "vllm":
+            messages_batch = [
+                [
+                    {"role": "system", "content": "You are an expert radiology evaluator that assesses the accuracy of radiology reports."},
+                    {"role": "user", "content": prompt},
+                ]
+                for prompt in prompts
+            ]
+            # vLLM handles batching internally with continuous batching
+            outputs = self.llm.chat(messages_batch, sampling_params=self.sampling_params, use_tqdm=True)
+            return [out.outputs[0].text for out in outputs]
 
         if self.api not in ["huggingface", "hf"]:
             raise ValueError(f"Batch not supported yet for API: {self.api}")
@@ -186,7 +222,7 @@ class CRIMSONScore:
         """
 
         # For the MedGemmaCRIMSON, exclude guidelines. the model was trained without them.
-        if self.api in ["huggingface", "hf"] and self.model_name == self.DEFAULT_HF_MODEL:
+        if self.api in ["huggingface", "hf", "vllm"] and self.model_name == self.DEFAULT_HF_MODEL:
             include_guidelines = False
         
         return _build_evaluation_prompt_fn(
@@ -292,8 +328,16 @@ class CRIMSONScore:
 
         results = []
         for idx, response in enumerate(responses):
-            evaluation = self._parse_json_response(response, batch_idx=idx)
-            results.append(self._calculate_crimson(evaluation))
+            try:
+                evaluation = self._parse_json_response(response, batch_idx=idx)
+                results.append(self._calculate_crimson(evaluation))
+            except Exception as e:
+                print(f"  [warn] sample {idx} failed: {e}")
+                results.append(None)
+
+        n_fail = sum(1 for r in results if r is None)
+        if n_fail:
+            print(f"  [warn] {n_fail}/{len(results)} samples failed to parse/score")
 
         return results
     
