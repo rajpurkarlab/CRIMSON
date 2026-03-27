@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crimson-score"
-version = "0.1.0"
+version = "0.2.0"
 description = "CRIMSON: A Clinically-Grounded LLM-Based Metric for Generative Radiology Report Evaluation"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -40,13 +40,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+vllm = ["vllm>=0.18.0"]
 dev = ["pytest", "twine"]
 
 [tool.setuptools.packages.find]
 include = ["CRIMSON*"]
 
 [project.urls]
-Homepage = "https://github.com/rajpurkarlab/CRIMSON"
 Repository = "https://github.com/rajpurkarlab/CRIMSON"
 Paper = "https://arxiv.org/abs/2603.06183"
-"Model (HuggingFace)" = "https://huggingface.co/CRIMSONScore/medgemma-4b-it-crimson"
+"Model (HuggingFace)" = "https://huggingface.co/rajpurkarlab/medgemma-4b-it-crimson"

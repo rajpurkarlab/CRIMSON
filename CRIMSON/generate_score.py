@@ -14,7 +14,7 @@ class CRIMSONScore:
     radiology report generation quality.
     """
     
-    DEFAULT_HF_MODEL = "CRIMSONScore/medgemma-4b-it-crimson"
+    DEFAULT_HF_MODEL = "rajpurkarlab/medgemma-4b-it-crimson"
     DEFAULT_MAX_NEW_TOKENS = 8192
 
     def __init__(
@@ -30,7 +30,7 @@ class CRIMSONScore:
             api: Model type to use ("hf", "huggingface", "openai").
                  Defaults to "hf".
             model_name: Specific model name / deployment name.
-                       Defaults to "CRIMSONScore/medgemma-4b-it-crimson" for HF.
+                       Defaults to "rajpurkarlab/medgemma-4b-it-crimson" for HF.
                        For OpenAI, defaults to "gpt-5.2".
             device: Device to use for HuggingFace models. Defaults to "cuda".
         """

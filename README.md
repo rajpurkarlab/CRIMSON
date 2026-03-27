@@ -1,6 +1,6 @@
 # CRIMSON: A Clinically-Grounded LLM-Based Metric for Generative Radiology Report Evaluation
 
-[Paper](https://arxiv.org/abs/2603.06183) | [Model (HuggingFace)](https://huggingface.co/CRIMSONScore/medgemma-4b-it-crimson)
+[Paper](https://arxiv.org/abs/2603.06183) | [Model (HuggingFace)](https://huggingface.co/rajpurkarlab/medgemma-4b-it-crimson)
 
 CRIMSON is a clinically grounded evaluation framework for chest X-ray report generation that assesses reports based on diagnostic correctness, contextual relevance, and patient safety. Unlike prior metrics, CRIMSON incorporates full clinical context, including patient age, indication, and guideline-based decision rules. CRIMSON evaluates only abnormal findings, excluding normal findings from scoring. The framework categorizes errors into a comprehensive taxonomy covering false findings, missing findings, and eight attribute-level errors (e.g., location, severity, measurement, and diagnostic overinterpretation). Each finding is assigned a clinical significance level (urgent, actionable non-urgent, non-actionable, or expected/benign), based on a guideline developed in collaboration with attending cardiothoracic radiologists, enabling severity-aware weighting that prioritizes clinically consequential mistakes over benign discrepancies. Findings are weighted as 1.0 (urgent), 0.5 (actionable non-urgent), 0.25 (non-actionable), or 0.0 (expected/benign), and attribute errors are weighted as 0.5 (significant) or 0.0 (negligible). After weighting, the framework produces a score in the range of (-1, 1], where 1 represents a perfect report, 0 indicates the report is no more informative than a normal template, and negative scores indicate more weighted errors than correct findings.
 
@@ -36,7 +36,7 @@ pip install -e .
 
 ## Usage
 
-By default, CRIMSON uses the fine-tuned [MedGemmaCRIMSON model](https://huggingface.co/CRIMSONScore/medgemma-4b-it-crimson) via HuggingFace.
+By default, CRIMSON uses the fine-tuned [MedGemmaCRIMSON model](https://huggingface.co/rajpurkarlab/medgemma-4b-it-crimson) via HuggingFace.
 
 To use OpenAI GPT models instead, set your API key:
 
